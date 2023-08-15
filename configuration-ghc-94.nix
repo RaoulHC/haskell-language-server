@@ -15,14 +15,21 @@ let
     } // (builtins.mapAttrs (_: drv: disableLibraryProfiling drv) {
       apply-refact = hsuper.apply-refact_0_12_0_0;
 
-      stylish-haskell = appendConfigureFlag  hsuper.stylish-haskell "-fghc-lib";
+      stylish-haskell = appendConfigureFlag  hsuper.stylish-haskell "-f-ghc-lib";
+
+      ghc-lib-parser-ex = appendConfigureFlag hsuper.ghc-lib-parser-ex "-fno-ghc-lib";
+      hlint = hself.callCabal2nixWithOptions "hlint" inputs.hlint-35 "-f-ghc-lib" {};
+
+      hls-hlint-plugin =
+        hself.callCabal2nixWithOptions "hls-hlint-plugin" ./plugins/hls-hlint-plugin
+        (pkgs.lib.concatStringsSep " " [ "--no-check" "-f-ghc-lib" ]) { };
 
       # Re-generate HLS drv excluding some plugins
       haskell-language-server =
         hself.callCabal2nixWithOptions "haskell-language-server" ./.
         # Pedantic cannot be used due to -Werror=unused-top-binds
         # Check must be disabled due to some missing required files
-        (pkgs.lib.concatStringsSep " " [ "--no-check" "-f-pedantic" "-f-hlint" ]) { };
+        (pkgs.lib.concatStringsSep " " [ "--no-check" "-f-pedantic" ]) { };
     });
 in {
   inherit disabledPlugins;
