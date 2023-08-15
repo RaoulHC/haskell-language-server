@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "apply-refact": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1692708206,
+        "narHash": "sha256-01GYsCIU2yVMzbjY0tJwbZG2QIlNUc/+Fb8+IalzHEg=",
+        "owner": "raoulhc",
+        "repo": "apply-refact",
+        "rev": "d1a5d385a7fafbf01ffbe5dddb93a1e4c7638bf8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "raoulhc",
+        "ref": "explicit-dynflags",
+        "repo": "apply-refact",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -146,13 +163,14 @@
     "lsp-test": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-48gVUVsDPR+RYl+K0ZN15N9EIdTQP8ma5nGPvzE6uoQ=",
-        "type": "tarball",
-        "url": "https://hackage.haskell.org/package/lsp-test-0.15.0.1/lsp-test-0.15.0.1.tar.gz"
+        "lastModified": 1692639108,
+        "narHash": "sha256-cCPPHN4ELaTI0IXqj8WDlle7CGxCepaY+9wNINZ4fAw=",
+        "path": "/home/rhidalgochar/haskell/lsp/lsp-test",
+        "type": "path"
       },
       "original": {
-        "type": "tarball",
-        "url": "https://hackage.haskell.org/package/lsp-test-0.15.0.1/lsp-test-0.15.0.1.tar.gz"
+        "path": "/home/rhidalgochar/haskell/lsp/lsp-test",
+        "type": "path"
       }
     },
     "lsp-types": {
@@ -209,6 +227,7 @@
     },
     "root": {
       "inputs": {
+        "apply-refact": "apply-refact",
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
         "fourmolu-011": "fourmolu-011",

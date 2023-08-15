@@ -1,11 +1,16 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedLabels  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TypeOperators     #-}
+
 module Main
   ( main
   ) where
+
+import           Data.Text.IO               as T
+import           System.IO
 
 import           Control.Lens               ((^.))
 import           Control.Monad              (when)
@@ -91,7 +96,7 @@ suggestionsTests =
   testGroup "hlint suggestions" [
     testCase "provides 3.8 code actions including apply all" $ runHlintSession "" $ do
         doc <- openDoc "Base.hs" "haskell"
-        diags@(reduceDiag:_) <- waitForDiagnosticsFromSource doc "hlint"
+        diags@(reduceDiag:_) <- waitForDiagnosticsFromSourceWithTimeout 1 doc "hlint"
 
         liftIO $ do
             length diags @?= 2 -- "Eta Reduce" and "Redundant Id"
@@ -99,6 +104,7 @@ suggestionsTests =
             reduceDiag ^. L.severity @?= Just DiagnosticSeverity_Information
             reduceDiag ^. L.code @?= Just (InR "refact:Eta reduce")
             reduceDiag ^. L.source @?= Just "hlint"
+
 
         cas <- map fromAction <$> getAllCodeActions doc
 
@@ -386,7 +392,11 @@ disableHlint = sendConfigurationChanged $ toJSON $ def { Plugin.plugins = Map.fr
 -- Although a given hlint version supports one direct ghc, we could use several versions of hlint
 -- each one supporting a different ghc version. It should be a temporary situation though.
 knownBrokenForHlintOnGhcLib :: String -> TestTree -> TestTree
+#ifdef HLINT_ON_GHC_LIB
 knownBrokenForHlintOnGhcLib = expectFailBecause
+#else
+knownBrokenForHlintOnGhcLib _ x = x
+#endif
 
 -- 1's based
 data Point = Point {

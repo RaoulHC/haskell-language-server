@@ -59,12 +59,17 @@
       flake = false;
     };
     lsp-test = {
-      url = "https://hackage.haskell.org/package/lsp-test-0.15.0.1/lsp-test-0.15.0.1.tar.gz";
+      url = "/home/rhidalgochar/haskell/lsp/lsp-test";
       flake = false;
     };
 
     haskell-hie-bios = {
       url = "github:haskell/hie-bios";
+      flake = false;
+    };
+
+    apply-refact = {
+      url = "github:raoulhc/apply-refact?ref=explicit-dynflags";
       flake = false;
     };
     # smunix: github:haskell/hie-bios defines
@@ -253,6 +258,8 @@
             # our compiling toolchain
             hpkgs.ghc
             hpkgs.cabal-install
+            # @guibou: I'm not sure this is needed.
+            hpkgs.hlint
             # @guibou: I'm not sure hie-bios is needed
             # pkgs.haskellPackages.hie-bios
             # Dependencies needed to build some parts of hackage
@@ -261,8 +268,6 @@
             (gen-hls-changelogs pkgs.haskellPackages)
             # For the documentation
             pythonWithPackages
-            # @guibou: I'm not sure this is needed.
-            hlint
             (pkgs.haskell.lib.justStaticExecutables (pkgs.haskell.lib.dontCheck pkgs.haskellPackages.opentelemetry-extra))
             capstone
             # ormolu

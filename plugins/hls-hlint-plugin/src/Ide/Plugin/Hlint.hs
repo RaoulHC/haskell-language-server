@@ -10,7 +10,6 @@
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE OverloadedLabels          #-}
 {-# LANGUAGE OverloadedStrings         #-}
-{-# LANGUAGE PackageImports            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
@@ -77,22 +76,22 @@ import           Development.IDE.GHC.Compat                         (DynFlags,
                                                                      topDir,
                                                                      wopt)
 import qualified Development.IDE.GHC.Compat.Util                    as EnumSet
-
-#if MIN_GHC_API_VERSION(9,4,0)
-import qualified "ghc-lib-parser" GHC.Data.Strict                   as Strict
-#endif
-#if MIN_GHC_API_VERSION(9,0,0)
-import           "ghc-lib-parser" GHC.Types.SrcLoc                  hiding
-                                                                    (RealSrcSpan)
-import qualified "ghc-lib-parser" GHC.Types.SrcLoc                  as GHC
-#else
-import           "ghc-lib-parser" SrcLoc                            hiding
-                                                                    (RealSrcSpan)
-import qualified "ghc-lib-parser" SrcLoc                            as GHC
-#endif
-import           "ghc-lib-parser" GHC.LanguageExtensions            (Extension)
-import           Language.Haskell.GhclibParserEx.GHC.Driver.Session as GhclibParserEx (readExtension)
+import qualified GHC.Data.Strict                                    as Strict
 import           System.FilePath                                    (takeFileName)
+import           System.IO.Temp
+
+-- TODO make this work for GHC < 9.2.8?
+#if MIN_GHC_API_VERSION(9,0,0)
+import           GHC.Types.SrcLoc                                   hiding
+                                                                    (RealSrcSpan)
+import qualified GHC.Types.SrcLoc                                   as GHC
+#else
+import qualified SrcLoc                                             as GHC
+import           SrcLoc                                             hiding
+                                                                    (RealSrcSpan)
+#endif
+import           GHC.LanguageExtensions                             (Extension)
+import           Language.Haskell.GhclibParserEx.GHC.Driver.Session as GhclibParserEx (readExtension)
 import           System.IO                                          (IOMode (WriteMode),
                                                                      hClose,
                                                                      hPutStr,
@@ -101,21 +100,23 @@ import           System.IO                                          (IOMode (Wri
                                                                      noNewlineTranslation,
                                                                      utf8,
                                                                      withFile)
-import           System.IO.Temp
 #else
 import           Development.IDE.GHC.Compat                         hiding
                                                                     (setEnv,
                                                                      (<+>))
 import           GHC.Generics                                       (Associativity (LeftAssociative, NotAssociative, RightAssociative))
+import           Language.Haskell.GHC.ExactPrint                    (makeDeltaAst)
+import           Language.Haskell.GHC.ExactPrint.Parsers            (postParseTransform)
 #if MIN_GHC_API_VERSION(9,2,0)
-import           Language.Haskell.GHC.ExactPrint.ExactPrint         (deltaOptions)
+import qualified GHC.Types.Fixity                                   as GHC
 #else
 import           Language.Haskell.GHC.ExactPrint.Delta              (deltaOptions)
+import           System.IO.Temp
 #endif
-import           Language.Haskell.GHC.ExactPrint.Parsers            (postParseTransform)
-import           Language.Haskell.GHC.ExactPrint.Types              (Rigidity (..))
 import           Language.Haskell.GhclibParserEx.Fixity             as GhclibParserEx (applyFixities)
 import qualified Refact.Fixity                                      as Refact
+#if MIN_GHC_API_VERSION(9,2,0)
+#endif
 #endif
 import           Ide.Plugin.Config                                  hiding
                                                                     (Config)
@@ -132,7 +133,8 @@ import           Language.LSP.Protocol.Message
 import           Language.LSP.Protocol.Types                        hiding
                                                                     (Null)
 import qualified Language.LSP.Protocol.Types                        as LSP
-import           Language.LSP.Server                                (getVersionedTextDoc)
+import           Language.LSP.Server                                (getClientCapabilities,
+                                                                     getVersionedTextDoc)
 
 import qualified Development.IDE.Core.Shake                         as Shake
 import           Development.IDE.Spans.Pragmas                      (LineSplitTextEdits (LineSplitTextEdits),
@@ -170,6 +172,11 @@ instance Pretty Log where
     LogResolve msg -> pretty msg
 
 #ifdef HLINT_ON_GHC_LIB
+#if MIN_GHC_API_VERSION(9,4,0)
+fromStrictMaybe :: Strict.Maybe a -> Maybe a
+fromStrictMaybe (Strict.Just a ) = Just a
+fromStrictMaybe  Strict.Nothing  = Nothing
+#endif
 -- Reimplementing this, since the one in Development.IDE.GHC.Compat isn't for ghc-lib
 #if !MIN_GHC_API_VERSION(9,0,0)
 type BufSpan = ()
@@ -185,11 +192,6 @@ pattern RealSrcSpan x y <- ((,Nothing) -> (GHC.RealSrcSpan x, y))
 {-# COMPLETE RealSrcSpan, UnhelpfulSpan #-}
 #endif
 
-#if MIN_GHC_API_VERSION(9,4,0)
-fromStrictMaybe :: Strict.Maybe a -> Maybe a
-fromStrictMaybe (Strict.Just a ) = Just a
-fromStrictMaybe  Strict.Nothing  = Nothing
-#endif
 
 descriptor :: Recorder (WithPriority Log) -> PluginId -> PluginDescriptor IdeState
 descriptor recorder plId =
@@ -315,12 +317,10 @@ getIdeas recorder nfp = do
           mbpm <- getParsedModuleWithComments nfp
           return $ createModule <$> mbpm
           where
-            createModule pm = Right (createModuleEx anns (applyParseFlagsFixities modu))
-                  where anns = pm_annotations pm
-                        modu = pm_parsed_source pm
+            createModule = Right . createModuleEx . applyParseFlagsFixities . pm_parsed_source
 
             applyParseFlagsFixities :: ParsedSource -> ParsedSource
-            applyParseFlagsFixities modul = GhclibParserEx.applyFixities (parseFlagsToFixities _flags) modul
+            applyParseFlagsFixities = GhclibParserEx.applyFixities (parseFlagsToFixities _flags)
 
             parseFlagsToFixities :: ParseFlags -> [(String, Fixity)]
             parseFlagsToFixities = map toFixity . Hlint.fixities
@@ -328,9 +328,9 @@ getIdeas recorder nfp = do
             toFixity :: FixityInfo -> (String, Fixity)
             toFixity (name, dir, i) = (name, Fixity NoSourceText i $ f dir)
                 where
-                    f LeftAssociative  = InfixL
-                    f RightAssociative = InfixR
-                    f NotAssociative   = InfixN
+                    f LeftAssociative  = GHC.InfixL
+                    f RightAssociative = GHC.InfixR
+                    f NotAssociative   = GHC.InfixN
 #else
         moduleEx flags = do
           mbpm <- getParsedModuleWithComments nfp
@@ -443,9 +443,10 @@ codeActionProvider ideState _pluginId (CodeActionParams _ _ documentId _ context
 resolveProvider :: Recorder (WithPriority Log) -> ResolveFunction IdeState HlintResolveCommands Method_CodeActionResolve
 resolveProvider recorder ideState _plId ca uri resolveValue = do
   file <-  getNormalizedFilePathE uri
+  clientCapabilities <- lift getClientCapabilities
   case resolveValue of
     (ApplyHint verTxtDocId oneHint) -> do
-        edit <- ExceptT $ liftIO $ applyHint recorder ideState file oneHint verTxtDocId
+        edit <- ExceptT $ liftIO $ applyHint clientCapabilities recorder ideState file oneHint verTxtDocId
         pure $ ca & LSP.edit ?~ edit
     (IgnoreHint verTxtDocId hintTitle ) -> do
         edit <- ExceptT $ liftIO $ ignoreHint recorder ideState file verTxtDocId hintTitle
@@ -543,8 +544,8 @@ data OneHint =
     , oneHintTitle :: HintTitle
     } deriving (Generic, Eq, Show, ToJSON, FromJSON)
 
-applyHint :: Recorder (WithPriority Log) -> IdeState -> NormalizedFilePath -> Maybe OneHint -> VersionedTextDocumentIdentifier -> IO (Either PluginError WorkspaceEdit)
-applyHint recorder ide nfp mhint verTxtDocId =
+applyHint :: ClientCapabilities -> Recorder (WithPriority Log) -> IdeState -> NormalizedFilePath -> Maybe OneHint -> VersionedTextDocumentIdentifier -> IO (Either PluginError WorkspaceEdit)
+applyHint clientCapabilities recorder ide nfp mhint verTxtDocId =
   runExceptT $ do
     let runAction' :: Action a -> IO a
         runAction' = runAction "applyHint" ide
@@ -573,7 +574,7 @@ applyHint recorder ide nfp mhint verTxtDocId =
                 hSetEncoding h utf8
                 hSetNewlineMode h noNewlineTranslation
                 hPutStr h (T.unpack txt)
-    res <-
+    res <- do
         liftIO $ withSystemTempFile (takeFileName fp) $ \temp h -> do
             hClose h
             writeFileUTF8NoNewLineTranslation temp oldContent
@@ -587,22 +588,19 @@ applyHint recorder ide nfp mhint verTxtDocId =
     mbParsedModule <- liftIO $ runAction' $ getParsedModuleWithComments nfp
     res <-
         case mbParsedModule of
-            Nothing -> throwError "Apply hint: error parsing the module"
+            Nothing -> throwError $ PluginInternalError "Apply hint: error parsing the module"
             Just pm -> do
-                let anns = pm_annotations pm
-                let modu = pm_parsed_source pm
-                -- apply-refact uses RigidLayout
-                let rigidLayout = deltaOptions RigidLayout
-                (anns', modu') <-
-                    ExceptT $ mapM (uncurry Refact.applyFixities)
-                            $ postParseTransform (Right (anns, [], dflags, modu)) rigidLayout
-                liftIO $ (Right <$> Refact.applyRefactorings' position commands anns' modu')
+                let modu = makeDeltaAst $ pm_parsed_source pm
+                modu' <-
+                     ExceptT $ mapM Refact.applyFixities
+                             $ postParseTransform (Right ([], dflags, modu))
+                liftIO $ (Right <$> Refact.applyRefactorings' dflags position commands modu')
                             `catches` errorHandlers
 #endif
     case res of
       Right appliedFile -> do
-        let wsEdit = diffText' True (verTxtDocId, oldContent) (T.pack appliedFile) IncludeDeletions
-        ExceptT $ return (Right wsEdit)
+        let wsEdit = diffText clientCapabilities (verTxtDocId, oldContent) (T.pack appliedFile) IncludeDeletions
+        ExceptT $ pure $ Right wsEdit
       Left err ->
         throwError $ PluginInternalError $ T.pack err
     where
@@ -628,6 +626,7 @@ bimapExceptT f g (ExceptT m) = ExceptT (fmap h m) where
   h (Right a) = Right (g a)
 {-# INLINE bimapExceptT #-}
 
+#ifdef HLINT_ON_GHC_LIB
 -- ---------------------------------------------------------------------------
 -- Apply-refact compatability, documentation copied from upstream apply-refact
 -- ---------------------------------------------------------------------------
@@ -678,4 +677,5 @@ applyRefactorings =
     withRuntimeLibdir :: FilePath -> IO a -> IO a
     withRuntimeLibdir libdir = bracket_ (setEnv key libdir) (unsetEnv key)
         where key = "GHC_EXACTPRINT_GHC_LIBDIR"
+#endif
 #endif

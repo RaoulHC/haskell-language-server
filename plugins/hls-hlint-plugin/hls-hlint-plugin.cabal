@@ -29,6 +29,13 @@ flag pedantic
   default:     False
   manual:      True
 
+flag ghc-lib
+  description:
+    Use ghc-lib-parser rather than the ghc library (requires hlint and
+    ghc-lib-parser-ex to also be built with it)
+  default: True
+  manual: True
+
 library
   exposed-modules:    Ide.Plugin.Hlint
   hs-source-dirs:     src
@@ -59,11 +66,19 @@ library
     , text
     , transformers
     , unordered-containers
-    , ghc-lib-parser
     , ghc-lib-parser-ex
     , apply-refact
 
-  cpp-options:   -DHLINT_ON_GHC_LIB
+  if flag(ghc-lib)
+    cpp-options:   -DHLINT_ON_GHC_LIB
+    build-depends:
+        ghc-lib-parser
+  else
+    build-depends:
+        ghc
+      , ghc-boot
+      , ghc-boot-th
+
   ghc-options:
     -Wall -Wredundant-constraints -Wno-name-shadowing
     -Wno-unticked-promoted-constructors
@@ -94,3 +109,5 @@ test-suite tests
     , lsp-types
     , row-types
     , text
+  if flag(ghc-lib)
+    cpp-options:   -DHLINT_ON_GHC_LIB
